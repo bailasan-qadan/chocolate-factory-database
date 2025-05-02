@@ -1,0 +1,438 @@
+DROP DATABASE IF EXISTS alhijaz;
+CREATE DATABASE alhijaz;
+USE alhijaz;
+
+-- Production related tables
+CREATE TABLE production_line (
+    line_num VARCHAR(50) PRIMARY KEY,
+    mechanism VARCHAR(100)
+);
+
+CREATE TABLE brand (
+    brand_id INT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(100),
+    roll_color VARCHAR(50)
+);
+
+-- Product related tables
+CREATE TABLE chocolate (
+    chocolate_id INT PRIMARY KEY AUTO_INCREMENT,
+    type VARCHAR(50),
+    shape VARCHAR(50),
+    measure_unit VARCHAR(20),
+    unit_price DECIMAL(10,2),
+    reorder_level INT,
+    barcode VARCHAR(50),
+    created_date DATE,
+    expiry_date DATE,
+    number_of_units_in_stock INT,
+    brand_id INT,
+    image_path VARCHAR(255),
+    FOREIGN KEY (brand_id) REFERENCES brand(brand_id) ON DELETE SET NULL
+);
+
+-- Inventory related tables
+CREATE TABLE stock (
+    stock_id INT PRIMARY KEY AUTO_INCREMENT,
+    type VARCHAR(50),
+    floor_no VARCHAR(20),
+    max_capacity INT
+);
+
+CREATE TABLE ingredient (
+    ing_id INT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(100),
+    reorder_level INT,
+    unit_price DECIMAL(10,2),
+    number_of_units_in_stock INT
+);
+
+-- Personnel related tables
+CREATE TABLE department (
+    dept_num VARCHAR(50) PRIMARY KEY,
+    name VARCHAR(100)
+);
+
+CREATE TABLE employee (
+    employee_id INT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(100),
+    gender VARCHAR(20),
+    age INT,
+    role VARCHAR(50),
+    shift_type VARCHAR(50),
+    working_hours INT,
+    salary DECIMAL(10,2),
+    dept_num VARCHAR(50),
+    FOREIGN KEY (dept_num) REFERENCES department(dept_num) ON DELETE SET NULL
+);
+
+CREATE TABLE sales_rep (
+    sales_rep_id INT PRIMARY KEY,
+    region VARCHAR(100),
+    FOREIGN KEY (sales_rep_id) REFERENCES employee(employee_id) ON DELETE CASCADE
+);
+
+-- Customer related tables
+CREATE TABLE client (
+    client_id INT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(100),
+    location VARCHAR(200),
+    phone_number VARCHAR(20),
+    email VARCHAR(100)
+);
+
+-- Order related tables
+CREATE TABLE ordert (
+    order_id INT PRIMARY KEY AUTO_INCREMENT,
+    order_date DATE,
+    arrival_date DATE,
+    client_id INT,
+    sales_rep_id INT,
+    FOREIGN KEY (client_id) REFERENCES client(client_id) ON DELETE SET NULL,
+    FOREIGN KEY (sales_rep_id) REFERENCES sales_rep(sales_rep_id) ON DELETE SET NULL
+);
+
+CREATE TABLE orderdetail (
+    order_id INT,
+    chocolate_id INT,
+    payment_method VARCHAR(50),
+    quantity INT,
+    unit_price DECIMAL(10,2),
+    discount DECIMAL(5,2),
+    PRIMARY KEY(order_id, chocolate_id),
+    FOREIGN KEY (order_id) REFERENCES ordert(order_id) ON DELETE CASCADE,
+    FOREIGN KEY (chocolate_id) REFERENCES chocolate(chocolate_id) ON DELETE CASCADE
+);
+
+-- Relationship tables
+CREATE TABLE stock_chocolate (
+    stock_id INT,
+    chocolate_id INT,
+    quantity INT,
+    PRIMARY KEY (stock_id, chocolate_id),
+    FOREIGN KEY (stock_id) REFERENCES stock(stock_id) ON DELETE CASCADE,
+    FOREIGN KEY (chocolate_id) REFERENCES chocolate(chocolate_id) ON DELETE CASCADE
+);
+
+CREATE TABLE chocolate_ingredient (
+    chocolate_id INT,
+    material_id INT,
+    quantity DECIMAL(10,2),
+    PRIMARY KEY (chocolate_id, material_id),
+    FOREIGN KEY (chocolate_id) REFERENCES chocolate(chocolate_id) ON DELETE CASCADE,
+    FOREIGN KEY (material_id) REFERENCES ingredient(ing_id) ON DELETE CASCADE
+);
+
+CREATE TABLE production_brand (
+    line_num VARCHAR(50),
+    brand_id INT,
+    PRIMARY KEY (line_num, brand_id),
+    FOREIGN KEY (line_num) REFERENCES production_line(line_num) ON DELETE CASCADE,
+    FOREIGN KEY (brand_id) REFERENCES brand(brand_id) ON DELETE CASCADE
+);
+DROP TABLE IF EXISTS cart;
+CREATE TABLE cart (
+    cart_id INT AUTO_INCREMENT PRIMARY KEY,
+    client_id INT NOT NULL,
+    product_id INT NOT NULL,
+    quantity INT DEFAULT 1,
+    FOREIGN KEY (client_id) REFERENCES client(client_id),  -- Changed from clients to client
+    FOREIGN KEY (product_id) REFERENCES chocolate(chocolate_id)
+);
+-- Add stock_ingredient table which exists in the second schema
+CREATE TABLE stock_ingredient (
+    stock_id INT,
+    ing_id INT,
+    quantity INT,
+    PRIMARY KEY (stock_id, ing_id),
+    FOREIGN KEY (stock_id) REFERENCES stock(stock_id) ON DELETE CASCADE,
+    FOREIGN KEY (ing_id) REFERENCES ingredient(ing_id) ON DELETE CASCADE
+);
+
+-- Add security tables from second schema
+CREATE TABLE emp_security (
+    emp_id INT PRIMARY KEY,
+    password CHAR(8),
+    FOREIGN KEY (emp_id) REFERENCES employee(employee_id)
+);
+
+CREATE TABLE manager_security (
+    mng_id INT PRIMARY KEY,
+    password CHAR(8)
+);
+
+CREATE TABLE client_security (
+    client_id INT PRIMARY KEY,
+    password CHAR(8)
+);
+
+-- Add UNIQUE constraint to barcode in chocolate table
+ALTER TABLE chocolate 
+ADD UNIQUE (barcode);
+-- Add manager relationship
+ALTER TABLE department 
+ADD COLUMN manager_id INT,
+ADD FOREIGN KEY (manager_id) REFERENCES employee(employee_id) ON DELETE SET NULL;
+ALTER TABLE chocolate MODIFY COLUMN type VARCHAR(100);
+ALTER TABLE client AUTO_INCREMENT = 100000;
+ALTER TABLE client 
+ADD COLUMN password VARCHAR(255) NOT NULL DEFAULT 'changeme';
+
+-- Create stored procedure for client login
+DELIMITER //
+CREATE PROCEDURE client_login(
+    IN p_client_id INT,
+    IN p_password VARCHAR(255)
+)
+BEGIN
+    DECLARE client_exists INT;
+    
+    SELECT COUNT(*) INTO client_exists
+    FROM client
+    WHERE client_id = p_client_id AND password = p_password;
+    
+    IF client_exists > 0 THEN
+        -- Return client information
+        SELECT 
+            c.client_id,
+            c.name,
+            c.location,
+            c.phone_number,
+            c.email,
+            o.order_id,
+            o.order_date,
+            o.arrival_date,
+            ch.type as chocolate_type,
+            od.quantity,
+            od.unit_price,
+            od.discount
+        FROM client c
+        LEFT JOIN ordert o ON c.client_id = o.client_id
+        LEFT JOIN orderdetail od ON o.order_id = od.order_id
+        LEFT JOIN chocolate ch ON od.chocolate_id = ch.chocolate_id
+        WHERE c.client_id = p_client_id
+        ORDER BY o.order_date DESC;
+    ELSE
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Invalid client ID or password';
+    END IF;
+END //
+DELIMITER ;
+-- Insert brands
+INSERT INTO brand (name, roll_color) VALUES 
+('ChocoMedjool', 'Gold'),
+('Pogati', 'Silver'),
+('Gourmet', 'Gold'),
+('BEST', 'Gold'),
+('Revera', 'Silver'),
+('Lorka', 'Gold');
+
+-- Insert ingredients
+INSERT INTO ingredient (name, reorder_level, unit_price) VALUES
+('Milk chocolate', 100, 15.50),
+('Cocoa butter', 100, 15.50),
+('Sugar', 200, 2.50),
+('Milk solids', 150, 8.75);
+-- Insert all Pogati chocolates
+INSERT INTO chocolate (type, shape, measure_unit, unit_price, reorder_level, barcode, 
+                      created_date, expiry_date, number_of_units_in_stock, brand_id, image_path)
+VALUES 
+('Display Package (77 piece)', 'Mixed', '1kg', 120, 10, 'PO01', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 30, 
+ (SELECT brand_id FROM brand WHERE name = 'Pogati'), 'C:/Users/HP/Desktop/i/pogati/backet.png'),
+('White Pearl', 'Round', '13g', 2, 10, 'PO06', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 30,
+ (SELECT brand_id FROM brand WHERE name = 'Pogati'), 'C:\Users\HP\Desktop\i\pogati\white.png'),
+('Pink Rose', 'Round', '13g', 2, 10, 'PO07', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 30,
+ (SELECT brand_id FROM brand WHERE name = 'Pogati'), 'C:\Users\HP\Desktop\i\pogati\pink rose.png'),
+('Green Pistachio', 'Round', '13g', 2, 10, 'PO08', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 30,
+ (SELECT brand_id FROM brand WHERE name = 'Pogati'), 'C:\Users\HP\Desktop\i\pogati\PO08.png'),
+('Gray Pearl', 'Round', '13g', 2, 10, 'PO09', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 30,
+ (SELECT brand_id FROM brand WHERE name = 'Pogati'), 'C:\Users\HP\Desktop\i\pogati\PO09.png'),
+('Blue Ocean', 'Round', '13g', 2, 10, 'PO10', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 30,
+ (SELECT brand_id FROM brand WHERE name = 'Pogati'), 'C:\Users\HP\Desktop\i\pogati\PO10.png'),
+('Red Ruby', 'Round', '13g', 2, 10, 'PO11', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 30,
+ (SELECT brand_id FROM brand WHERE name = 'Pogati'), 'C:\Users\HP\Desktop\i\pogati\PO11.png'),
+('Golden Pearl', 'Round', '13g', 2, 10, 'PO12', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 30,
+ (SELECT brand_id FROM brand WHERE name = 'Pogati'), 'C:\Users\HP\Desktop\i\pogati\PO12.png'),
+('Green Mix Pearl', 'Round', '13g', 2, 10, 'PO13', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 30,
+ (SELECT brand_id FROM brand WHERE name = 'Pogati'), 'C:\Users\HP\Desktop\i\pogati\PO13.png'),
+('Green Spotted Pearl', 'Round', '13g',2, 10, 'PO14', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 30,
+ (SELECT brand_id FROM brand WHERE name = 'Pogati'), 'C:\Users\HP\Desktop\i\pogati\PO14.png'),
+('Gold Black Spotted', 'Round', '13g',2, 10, 'PO15', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 30,
+ (SELECT brand_id FROM brand WHERE name = 'Pogati'), 'C:\Users\HP\Desktop\i\pogati\PO15.png'),
+('Gold Red Spotted', 'Round', '13g',2, 10, 'PO16', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 30,
+ (SELECT brand_id FROM brand WHERE name = 'Pogati'), 'C:\Users\HP\Desktop\i\pogati\PO16.png'),
+('Gold Pearl Mix', 'Round', '13g', 2, 10, 'PO17', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 30,
+ (SELECT brand_id FROM brand WHERE name = 'Pogati'), 'C:\Users\HP\Desktop\i\pogati\PO17.png'),
+('Pink Pearl Mix', 'Round', '13g',2, 10, 'PO18', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 30,
+ (SELECT brand_id FROM brand WHERE name = 'Pogati'), 'C:\Users\HP\Desktop\i\pogati\PO18.png'),
+('Blue Spotted Pearl', 'Round', '13g', 2, 10, 'PO19', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 30,
+ (SELECT brand_id FROM brand WHERE name = 'Pogati'), 'C:\Users\HP\Desktop\i\pogati\PO19.png'),
+('Red Spotted Pearl', 'Round', '13g',2, 10, 'PO20', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 30,
+ (SELECT brand_id FROM brand WHERE name = 'Pogati'), 'C:\Users\HP\Desktop\i\pogati\PO20.png');
+
+-- Insert all Gourmet chocolates
+INSERT INTO chocolate (type, shape, measure_unit, unit_price, reorder_level, barcode, 
+                      created_date, expiry_date, number_of_units_in_stock, brand_id, image_path)
+VALUES 
+('Golden Biscuit', 'Round', '20g', 4, 20, 'GG01', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 50,
+ (SELECT brand_id FROM brand WHERE name = 'Gourmet'), 'C:\Users\HP\Desktop\i\gourmet\GG01.png'),
+('Square Chocolate with Cream', 'Square', '20g', 4, 20, 'GG02', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 50,
+ (SELECT brand_id FROM brand WHERE name = 'Gourmet'), 'C:\Users\HP\Desktop\i\gourmet\GG02.png'),
+('Date and Hazelnut', 'Round', '20g', 20, 20, 'GG03', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 50,
+ (SELECT brand_id FROM brand WHERE name = 'Gourmet'), 'C:\Users\HP\Desktop\i\gourmet\GG03.png'),
+('Square with Light Cream', 'Square', '20g', 4, 20, 'GG04', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 50,
+ (SELECT brand_id FROM brand WHERE name = 'Gourmet'), 'C:\Users\HP\Desktop\i\gourmet\GG04.png'),
+('Date and Almond', 'Round', '20g', 4, 20, 'GG05', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 50,
+ (SELECT brand_id FROM brand WHERE name = 'Gourmet'), 'C:\Users\HP\Desktop\i\gourmet\GG05.png'),
+('Date and Pistachio', 'Round', '20g', 4, 20, 'GG06', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 50,
+ (SELECT brand_id FROM brand WHERE name = 'Gourmet'), 'C:\Users\HP\Desktop\i\gourmet\GG06.png'),
+('Turkish Delight with Almond', 'Round', '20g',5, 20, 'GG07', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 50,
+ (SELECT brand_id FROM brand WHERE name = 'Gourmet'), 'C:\Users\HP\Desktop\i\gourmet\GG07.png'),
+('Brussels English Style with Crushed Almonds', 'Round', '20g', 3, 20, 'GG08', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 50,
+ (SELECT brand_id FROM brand WHERE name = 'Gourmet'), 'C:\Users\HP\Desktop\i\gourmet\GG08.png'),
+('Caramel', 'Round', '20g', 3, 20, 'GG10', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 50,
+ (SELECT brand_id FROM brand WHERE name = 'Gourmet'), 'C:\Users\HP\Desktop\i\gourmet\GG10.png'),
+('Almond Nougat', 'Round', '15g', 3, 20, 'GG12', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 50,
+ (SELECT brand_id FROM brand WHERE name = 'Gourmet'), 'C:\Users\HP\Desktop\i\gourmet\GG12.png'),
+('Brussels English Style Fingers with Crushed Nuts', 'Rectangle', '15g', 4, 20, 'GG13', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 50,
+ (SELECT brand_id FROM brand WHERE name = 'Gourmet'), 'C:\Users\HP\Desktop\i\gourmet\GG13.png'),
+('Prague English Style with Crushed Hazelnuts', 'Round', '20g', 4, 20, 'GG15', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 50,
+ (SELECT brand_id FROM brand WHERE name = 'Gourmet'), 'C:\Users\HP\Desktop\i\gourmet\GG15.png'),
+('Prague English Style Fingers with Crushed Hazelnuts', 'Rectangle', '20g', 4, 20, 'GG16', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 50,
+ (SELECT brand_id FROM brand WHERE name = 'Gourmet'), 'C:\Users\HP\Desktop\i\gourmet\GG16.png'),
+('Gianduja English Style with Crushed Hazelnuts', 'Round', '20g', 4, 20, 'GG18', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 50,
+ (SELECT brand_id FROM brand WHERE name = 'Gourmet'), 'C:\Users\HP\Desktop\i\gourmet\GG18.png'),
+('Crushed Pecan', 'Rectangle', '15g', 3, 20, 'GG21', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 50,
+ (SELECT brand_id FROM brand WHERE name = 'Gourmet'), 'C:\Users\HP\Desktop\i\gourmet\GG21.png'),
+('Date or Almond Gianduja', 'Round', '20g', 4, 20, 'GG23', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 50,
+ (SELECT brand_id FROM brand WHERE name = 'Gourmet'), 'C:\Users\HP\Desktop\i\gourmet\GG23.png'),
+('Gianduja English Style with French Biscuit Pearls', 'Round', '15g', 3, 20, 'GG24', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 50,
+ (SELECT brand_id FROM brand WHERE name = 'Gourmet'), 'C:\Users\HP\Desktop\i\gourmet\GG24.png'),
+('Nougat Square with French Biscuit Pearls', 'Square', '15g', 4, 20, 'GG25', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 50,
+ (SELECT brand_id FROM brand WHERE name = 'Gourmet'), 'C:\Users\HP\Desktop\i\gourmet\GG25.png');
+
+-- Insert all BEST chocolates
+INSERT INTO chocolate (type, shape, measure_unit, unit_price, reorder_level, barcode, 
+                      created_date, expiry_date, number_of_units_in_stock, brand_id, image_path)
+VALUES 
+('Ganduya pear', 'Wing', '18g', 4, 20, 'BB01', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 50,
+ (SELECT brand_id FROM brand WHERE name = 'BEST'), 'C:\Users\HP\Desktop\i\best\BB01.png'),
+('Berlin Pear', 'Wing', '18g', 4, 20, 'BB02', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 50,
+ (SELECT brand_id FROM brand WHERE name = 'BEST'), 'C:\Users\HP\Desktop\i\best\BB02.png'),
+('Gardenia pear', 'Wing', '18g', 4, 20, 'BB03', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 50,
+ (SELECT brand_id FROM brand WHERE name = 'BEST'), 'C:\Users\HP\Desktop\i\best\BB03.png'),
+('Mix Pear', 'Wing', '18g', 4, 20, 'BB06', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 50,
+ (SELECT brand_id FROM brand WHERE name = 'BEST'), 'C:\Users\HP\Desktop\i\best\BB06.png'),
+('almond circle', 'Round', '18g', 4, 20, 'BB08', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 50,
+ (SELECT brand_id FROM brand WHERE name = 'BEST'), 'C:\Users\HP\Desktop\i\best\BB08.png'),
+('Naples corn', 'Oval', '15g', 3, 20, 'BB10', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 50,
+ (SELECT brand_id FROM brand WHERE name = 'BEST'), 'C:\Users\HP\Desktop\i\best\BB10.png'),
+('Berlin Corn', 'Oval', '17g', 4, 20, 'BB11', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 50,
+ (SELECT brand_id FROM brand WHERE name = 'BEST'), 'C:\Users\HP\Desktop\i\best\BB11.png'),
+('Cashew Basket Diamond', 'Diamond', '20g', 6, 20, 'BB12', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 50,
+ (SELECT brand_id FROM brand WHERE name = 'BEST'), 'C:\Users\HP\Desktop\i\best\BB12.png'),
+('Hamdouha Grapes', 'Round', '14g', 3, 20, 'BB13', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 50,
+ (SELECT brand_id FROM brand WHERE name = 'BEST'), 'C:\Users\HP\Desktop\i\best\BB13.png'),
+('Berlin Heart', 'Heart', '13g', 2, 20, 'BB14', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 50,
+ (SELECT brand_id FROM brand WHERE name = 'BEST'), 'C:\Users\HP\Desktop\i\best\BB14.png'),
+('Hodge Cappuccino', 'Round', '15g', 3, 20, 'BB15', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 50,
+ (SELECT brand_id FROM brand WHERE name = 'BEST'), 'C:\Users\HP\Desktop\i\best\BB15.png'),
+('Wavy cylindrical caramel and almond', 'Square', '20g', 5, 20, 'BB16', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 50,
+ (SELECT brand_id FROM brand WHERE name = 'BEST'), 'C:\Users\HP\Desktop\i\best\BB16.png'),
+('Caramel Grooved Barrel', 'Diamond', '18g', 4, 20, 'BB17', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 50,
+ (SELECT brand_id FROM brand WHERE name = 'BEST'), 'C:\Users\HP\Desktop\i\best\BB17.png'),
+('ounce of raisins and almonds', 'rectangle', '18g', 5, 20, 'BB18', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 50,
+ (SELECT brand_id FROM brand WHERE name = 'BEST'), 'C:\Users\HP\Desktop\i\best\BB18.png');
+
+-- Insert Revera chocolates
+INSERT INTO chocolate (type, shape, measure_unit, unit_price, reorder_level, barcode, 
+                      created_date, expiry_date, number_of_units_in_stock, brand_id, image_path)
+VALUES 
+('Ounce of our shape', 'Rectangle', '25g', 5, 15, 'RV01', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 40,
+ (SELECT brand_id FROM brand WHERE name = 'Revera'), 'C:\Users\HP\Desktop\i\revera\RV01.png'),
+('Small square choco forest', 'Square', '20g', 5, 15, 'RV02', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 40,
+ (SELECT brand_id FROM brand WHERE name = 'Revera'), 'C:\Users\HP\Desktop\i\revera\RV02.png'),
+('small square brama', 'Square', '20g', 5, 15, 'RV03', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 40,
+ (SELECT brand_id FROM brand WHERE name = 'Revera'), 'C:\Users\HP\Desktop\i\revera\RV03.png'),
+ ('Mint resource', 'cube', '18g', 4, 15, 'RV04', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 40,
+ (SELECT brand_id FROM brand WHERE name = 'Revera'), 'C:\Users\HP\Desktop\i\revera\RV04.png'),
+('ounce choco forest', 'Rectangle', '25g', 5, 15, 'RV05', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 40,
+ (SELECT brand_id FROM brand WHERE name = 'Revera'), 'C:\Users\HP\Desktop\i\revera\RV05.png'),
+('ounce rosemary', 'Rectangle', '25g', 5, 15, 'RV06', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 40,
+ (SELECT brand_id FROM brand WHERE name = 'Revera'), 'C:\Users\HP\Desktop\i\revera\RV06.png');
+
+-- Insert Lorka chocolates
+INSERT INTO chocolate (type, shape, measure_unit, unit_price, reorder_level, barcode, 
+                      created_date, expiry_date, number_of_units_in_stock, brand_id, image_path)
+VALUES 
+('Date', 'Square', '15g', 3, 25, 'LK01', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 60,
+ (SELECT brand_id FROM brand WHERE name = 'Lorka'), 'C:\Users\HP\Desktop\i\lorka\date.png'),
+('coffee corn', 'Rectangle', '17g', 4, 25, 'LK02', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 60,
+ (SELECT brand_id FROM brand WHERE name = 'Lorka'), 'C:\Users\HP\Desktop\i\lorka\corn.png'),
+('Coconut ball', 'Round', '15g', 3, 25, 'LK03', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 60,
+ (SELECT brand_id FROM brand WHERE name = 'Lorka'), 'C:\Users\HP\Desktop\i\lorka\coconut.png'),
+('wavy mix', 'Square', '15g', 3, 25, 'LK04', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 60,
+ (SELECT brand_id FROM brand WHERE name = 'Lorka'), 'C:\Users\HP\Desktop\i\lorka\wavy.png');
+
+-- Insert ChocoMedjool chocolates
+INSERT INTO chocolate (type, shape, measure_unit, unit_price, reorder_level, barcode, 
+                      created_date, expiry_date, number_of_units_in_stock, brand_id, image_path)
+VALUES 
+('Milk chocolate stuffed dates', 'Oval', '300g', 50, 18, 'CM01', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 50,
+ (SELECT brand_id FROM brand WHERE name = 'ChocoMedjool'), 'C:\Users\HP\Desktop\i\choco\milk.png'),
+('Dark chocolate stuffed dates', 'Round', '300g', 50, 18, 'CM02', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 50,
+ (SELECT brand_id FROM brand WHERE name = 'ChocoMedjool'), 'C:\Users\HP\Desktop\i\choco\dark.png'),
+('Coconut stuffed dates', 'Oval', '300g', 50, 18, 'CM03', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 50,
+ (SELECT brand_id FROM brand WHERE name = 'ChocoMedjool'), 'C:\Users\HP\Desktop\i\choco\coconut.png'),
+('Caramel stuffed dates', 'Mixed', '300g', 50, 18, 'CM04', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 50,
+ (SELECT brand_id FROM brand WHERE name = 'ChocoMedjool'), 'C:\Users\HP\Desktop\i\choco\caramel.png'),
+('Mix', 'Round', '300g', 50, 18, 'CM05', CURRENT_DATE, DATE_ADD(CURRENT_DATE, INTERVAL 1 YEAR), 50,
+ (SELECT brand_id FROM brand WHERE name = 'ChocoMedjool'), 'C:\Users\HP\Desktop\i\choco\mix.png');
+
+-- Add chocolate ingredients relationships
+INSERT INTO chocolate_ingredient (chocolate_id, material_id, quantity)
+SELECT c.chocolate_id, i.ing_id, 0.25
+FROM chocolate c
+CROSS JOIN ingredient i
+WHERE i.name IN ('Milk chocolate', 'Cocoa butter');
+
+-- Add basic ingredients to all chocolates
+INSERT INTO chocolate_ingredient (chocolate_id, material_id, quantity)
+SELECT c.chocolate_id, i.ing_id, 0.15
+FROM chocolate c
+CROSS JOIN ingredient i
+WHERE i.name IN ('Sugar', 'Milk solids');
+
+-- Insert test clients with encrypted passwords
+INSERT INTO client (name, location, phone_number, email, password) VALUES
+('Ahmed Mohammad', 'Amman, Jordan', '0791234567', 'ahmed.m@email.com', MD5('pass123')),
+('Sara Ibrahim', 'Irbid, Jordan', '0777654321', 'sara.i@email.com', MD5('pass456')),
+('Omar Khalid', 'Zarqa, Jordan', '0788901234', 'omar.k@email.com', MD5('pass789')),
+('Layla Hassan', 'Aqaba, Jordan', '0799876543', 'layla.h@email.com', MD5('pass321')),
+('Zaid Nasser', 'Madaba, Jordan', '0796789012', 'zaid.n@email.com', MD5('pass654')),
+('Nour Rahman', 'Salt, Jordan', '0783456789', 'nour.r@email.com', MD5('pass987')),
+('Rami Sami', 'Jerash, Jordan', '0792345678', 'rami.s@email.com', MD5('pass147')),
+('Hana Waleed', 'Ajloun, Jordan', '0778901234', 'hana.w@email.com', MD5('pass258')),
+('Karim Fadi', 'Mafraq, Jordan', '0794567890', 'karim.f@email.com', MD5('pass369')),
+('Maya Salem', 'Karak, Jordan', '0789012345', 'maya.s@email.com', MD5('pass741'));
+
+-- Insert data into the ordert table
+INSERT INTO ordert (order_id, order_date, arrival_date, client_id) VALUES
+(1, '2025-01-01', '2025-01-05', 100001),
+(2, '2025-01-02', '2025-01-06', 100002),
+(3, '2025-01-03', '2025-01-07', 100003),
+(4, '2025-01-03', '2025-01-08', 100001),
+(5, '2025-01-04', '2025-01-09', 100004);
+
+-- Insert data into the orderdetail table
+INSERT INTO orderdetail (order_id, chocolate_id, quantity, unit_price) VALUES
+(1, 1, 10, 5.00),
+(1, 2, 5, 4.00),
+(2, 3, 20, 3.00),
+(3, 4, 15, 2.50),
+(3, 5, 7, 6.50),
+(4, 1, 12, 5.00),
+(5, 2, 8, 4.00);
+
+
+
