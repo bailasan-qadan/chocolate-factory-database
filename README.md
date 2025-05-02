@@ -41,7 +41,7 @@ This client-side module integrates with a MySQL database backend that holds all 
 - See a summary of your purchase history
 - Track total orders, quantities, and total cost
 - View trends in product selection
-
+  
 ---
 
 ## 🖼️ Product Catalog with Images
@@ -50,17 +50,7 @@ High-resolution product images are organized in folders by brand:
 
 - `/gourmet/`, `/pogati/`, `/revera/`, `/lorka/`, `/best/` – Distinct brand collections
 
-Example:
 
-### Pogati Collection
-![Pink Rose](pogati/pink%20rose.png)
-![Backet](pogati/backet.png)
-
-### Gourmet Collection
-![Golden Biscuit](gourmet/GG01.png)
-![Caramel](gourmet/GG10.png)
-
----
 
 ## 🛢️ Database Design
 
@@ -71,3 +61,17 @@ The system connects to a **MySQL database** named `alhijaz`. It includes over 20
 - **Cart and orders** (`cart`, `ordert`, `orderdetail`)
 - **Production & inventory** (`stock`, `ingredient`, `chocolate_ingredient`)
 - **Personnel & security** (`employee`, `emp_security`, `manager_security`)
+
+---
+## Screenshots of my program
+![Screenshot 2025-05-02 133351](https://github.com/user-attachments/assets/f04d0b77-f72e-4d74-b390-f99e0a24b928)
+![Screenshot 2025-05-02 140220](https://github.com/user-attachments/assets/5b44ba85-96a2-45ae-9300-e9ce3d9d25e9)
+![Screenshot 2025-05-02 133247](https://github.com/user-attachments/assets/f4c4e25d-df04-4484-bd74-ce8b9d417200)
+![Screenshot 2025-05-02 133404](https://github.com/user-attachments/assets/b1b83cba-fd89-412b-83e7-777627852ecf)
+![Screenshot 2025-05-02 133418](https://github.com/user-attachments/assets/6b2423ee-9ed6-4add-a24d-7ab6392e371d)
+![Screenshot 2025-05-02 133431](https://github.com/user-attachments/assets/1730e825-f752-4772-96be-e9c63f82fb3c)
+![Screenshot 2025-05-02 133450](https://github.com/user-attachments/assets/5d84336d-7059-405d-9113-e2d11120c9c8)
+![Screenshot 2025-05-02 133503](https://github.com/user-attachments/assets/6545a802-7bb8-425e-bdcd-c5a32181a229)
+
+
+
